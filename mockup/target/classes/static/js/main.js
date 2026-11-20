@@ -9,6 +9,9 @@
     const canvas = $('mammogram');
     const ctx = canvas.getContext('2d');
     let demo = true, selected = 36, cols = 8, rows = 12, zoom = 1, processed = false, loading = false;
+    let lastStats = {mean:null, std:null};
+    let currentRepresentation = '8 bits · Escala de grises sintética';
+    let lastFocused = null;
     const label = index => `P-${String(index + 1).padStart(3, '0')}`;
     const region = index => {
         const x = (index % cols) * PATCH, y = Math.floor(index / cols) * PATCH;
@@ -18,6 +21,51 @@
         $('feedback').textContent = message;
         $('feedback').classList.toggle('error', error);
         $('feedback').hidden = !message;
+    }
+    const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+    function showLoading() {
+        lastFocused = document.activeElement;
+        $('loadingScreen').hidden = false;
+        document.body.classList.add('is-loading');
+        document.body.setAttribute('aria-busy', 'true');
+        document.querySelector('.app-shell').setAttribute('inert', '');
+        document.querySelector('.sidebar').setAttribute('inert', '');
+        document.querySelector('.loading-panel').focus();
+        document.querySelectorAll('.loading-steps li').forEach(step => step.classList.remove('active', 'done'));
+        $('loadingBar').style.width = '6%';
+        $('loadingTitle').textContent = 'Preparando la imagen';
+        $('loadingMessage').textContent = 'Validando el archivo PNG…';
+        setLoadingStep('validate', null, 6);
+        return performance.now();
+    }
+    function setLoadingStep(step, message, progress) {
+        const order = ['validate', 'decode', 'grid', 'ready'];
+        const current = order.indexOf(step);
+        document.querySelectorAll('.loading-steps li').forEach(item => {
+            const position = order.indexOf(item.dataset.step);
+            item.classList.toggle('active', position === current);
+            item.classList.toggle('done', position < current);
+        });
+        if (message) $('loadingMessage').textContent = message;
+        if (progress !== undefined) {
+            $('loadingBar').style.width = `${progress}%`;
+            document.querySelector('.loading-progress').setAttribute('aria-valuenow', String(progress));
+        }
+    }
+    async function hideLoading(started, minimum = 950) {
+        const remaining = Math.max(0, minimum - (performance.now() - started));
+        if (remaining) await sleep(remaining);
+        document.querySelectorAll('.loading-steps li').forEach(step => {
+            step.classList.remove('active');
+            step.classList.add('done');
+        });
+        $('loadingScreen').hidden = true;
+        document.body.classList.remove('is-loading');
+        document.body.removeAttribute('aria-busy');
+        document.querySelector('.app-shell').removeAttribute('inert');
+        document.querySelector('.sidebar').removeAttribute('inert');
+        const previous = lastFocused;
+        if (previous && previous.isConnected && !previous.disabled) setTimeout(() => previous.focus(), 0);
     }
     function createSyntheticImage() {
         original.width = 1024; original.height = 1536;
@@ -111,8 +159,9 @@
         const r=region(selected),data=source.getImageData(r.x,r.y,r.w,r.h).data;
         const bins=new Array(64).fill(0);let sum=0,sumSquares=0;
         for(let i=0;i<data.length;i+=4){const value=Math.round(.2126*data[i]+.7152*data[i+1]+.0722*data[i+2]);bins[Math.min(63,Math.floor(value/4))]++;sum+=value;sumSquares+=value*value;}
-        const n=r.w*r.h,mean=sum/n;
-        $('meanIntensity').textContent=mean.toFixed(1)+' / 255';$('stdIntensity').textContent=Math.sqrt(Math.max(0,sumSquares/n-mean*mean)).toFixed(1);
+        const n=r.w*r.h,mean=sum/n,std=Math.sqrt(Math.max(0,sumSquares/n-mean*mean));
+        lastStats={mean,std};
+        $('meanIntensity').textContent=mean.toFixed(1)+' / 255';$('stdIntensity').textContent=std.toFixed(1);
         const chart=$('histogram'),c=chart.getContext('2d');c.clearRect(0,0,chart.width,chart.height);
         c.strokeStyle='#e8efec';c.lineWidth=1;
         [35,70,105,139].forEach(y=>{c.beginPath();c.moveTo(0,y);c.lineTo(chart.width,y);c.stroke();});
@@ -147,7 +196,7 @@
         });
     }
     function resetDemo() {
-        demo=true;processed=false;zoom=1;cols=8;rows=12;
+        demo=true;processed=false;zoom=1;cols=8;rows=12;currentRepresentation='8 bits · Escala de grises sintética';
         $('heatToggle').checked=false;$('heatToggle').disabled=false;$('candidatesToggle').disabled=false;$('candidatesToggle').checked=true;$('gridToggle').checked=true;
         createSyntheticImage();buildGrid();buildCandidates();drawImage();selectPatch(36);fit();feedback('');
         $('fileName').textContent='mamografia_demo.png';$('fileProperties').textContent='1024 × 1536 px · 8 bits · Escala de grises sintética';
@@ -159,9 +208,10 @@
     async function loadFile(file) {
         if(!file||loading)return;
         loading=true;$('uploadButton').disabled=true;$('resetDemo').disabled=true;
-        feedback('Validando PNG y preparando vista local…');
+        const started=showLoading();
         let bitmap;
         try {
+            await sleep(160);
             if(file.size>20*1024*1024)throw new Error('El archivo supera el límite de 20 MB de esta vista previa.');
             const buffer=await file.arrayBuffer(),bytes=new Uint8Array(buffer),view=new DataView(buffer);
             const signature=[137,80,78,71,13,10,26,10];
@@ -169,31 +219,86 @@
             const width=view.getUint32(16),height=view.getUint32(20),bits=bytes[24],type=bytes[25];
             if(!width||!height||width>4096||height>4096||width*height>8000000)throw new Error('Dimensiones no compatibles: máximo 4096 px por lado y 8 megapíxeles.');
             if(bits!==8||![0,2,3,4,6].includes(type))throw new Error(`PNG de ${bits} bits no compatible con esta vista previa. Utiliza un PNG de 8 bits.`);
+            setLoadingStep('decode','Decodificando la imagen y componiendo la vista de 8 bits…',38);
+            await sleep(140);
             try{bitmap=await createImageBitmap(new Blob([buffer],{type:'image/png'}));}catch{throw new Error('No se pudo decodificar el PNG. El archivo puede estar dañado.');}
             if(bitmap.width!==width||bitmap.height!==height)throw new Error('Las dimensiones decodificadas no coinciden con el encabezado del archivo.');
+            setLoadingStep('grid','Construyendo la malla de regiones…',66);
+            await sleep(140);
             // Commit only after validation. Invalid files leave the previous study available.
             original.width=width;original.height=height;source.fillStyle='#000';source.fillRect(0,0,width,height);source.drawImage(bitmap,0,0);
             demo=false;processed=false;zoom=1;$('heatToggle').checked=false;$('heatToggle').disabled=true;$('candidatesToggle').checked=false;$('candidatesToggle').disabled=true;
             buildGrid();buildCandidates();drawImage();selectPatch(0);fit();
             const channels={0:'gris',2:'RGB',3:'paleta',4:'gris + alfa',6:'RGBA'}[type];
-            $('fileName').textContent=file.name;$('fileProperties').textContent=`${width} × ${height} px · ${bits} bits · ${channels} → vista RGBA de 8 bits`;
+            currentRepresentation=`${bits} bits · ${channels} → vista RGBA de 8 bits`;
+            $('fileName').textContent=file.name;$('fileProperties').textContent=`${width} × ${height} px · ${currentRepresentation}`;
             $('sidebarFile').textContent=file.name;$('analysisStatus').innerHTML='<span></span>Vista previa local';
             $('demoMessage').innerHTML='<b>Imagen local cargada.</b> Puedes explorar patches e histogramas. El modelo CNN y Grad-CAM aún no están integrados.';
             $('viewportMode').textContent='VISTA PREVIA · SIN INFERENCIA';$('watermark').textContent='DEEPSIGHT / ARCHIVO LOCAL';document.querySelector('.orientation').hidden=true;
             canvas.setAttribute('aria-label','Imagen PNG local con malla seleccionable');
+            setLoadingStep('ready','Vista lista. Abriendo el explorador…',100);
+            await sleep(140);
+            await hideLoading(started);
             feedback('Vista lista. Original conservado; vista RGBA de 8 bits sobre fondo negro. Histograma de luminancia del patch. No se ha realizado inferencia.');
-        } catch(error) {feedback(`${error.message} Se conserva la vista anterior.`,true);}
+        } catch(error) {
+            await hideLoading(started,350);
+            feedback(`${error.message} Se conserva la vista anterior.`,true);
+        }
         finally {bitmap?.close();loading=false;$('uploadButton').disabled=false;$('resetDemo').disabled=false;$('imageInput').value='';}
     }
     function navigate(name) {
         document.querySelectorAll('.page-view').forEach(section=>section.hidden=section.id!==name);
         document.querySelectorAll('.nav-item').forEach(button=>{const active=button.dataset.view===name;button.classList.toggle('active',active);if(active)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');});
-        $('breadcrumb').textContent={exploracion:'Exploración',evaluacion:'Evaluación del modelo',configuracion:'Configuración'}[name];
+        $('breadcrumb').textContent={exploracion:'Exploración',configuracion:'Configuración'}[name];
         if(name==='exploracion')fit();
+    }
+    function downloadBytes(bytes, fileName) {
+        const blob=new Blob([bytes],{type:'application/pdf'});
+        const url=URL.createObjectURL(blob);
+        const link=document.createElement('a');
+        link.href=url;link.download=fileName;
+        document.body.append(link);link.click();link.remove();
+        setTimeout(()=>URL.revokeObjectURL(url),2000);
+    }
+    async function exportReport() {
+        const button=$('exportReport'), labelElement=$('exportLabel');
+        if(button.disabled)return;
+        button.disabled=true;button.setAttribute('aria-busy','true');labelElement.textContent='Generando PDF…';
+        try {
+            await sleep(60);
+            if(!window.DeepSightReport)throw new Error('El generador de reportes no está disponible.');
+            const fallbackScore=.08+(selected*17%29)/100;
+            const score=demo?(candidates.find(candidate=>candidate.index===selected)?.score ?? fallbackScore):null;
+            const report=window.DeepSightReport.build({
+                fileName:$('fileName').textContent,
+                width:original.width,
+                height:original.height,
+                cols,
+                rows,
+                patchSize:PATCH,
+                representation:currentRepresentation,
+                demo,
+                generatedAt:new Date().toLocaleString('es-MX',{dateStyle:'medium',timeStyle:'short'}),
+                selected:{label:label(selected),...region(selected),mean:lastStats.mean,std:lastStats.std,score},
+                candidates:demo?candidates.map(candidate=>{
+                    const r=region(candidate.index);
+                    return {label:label(candidate.index),x:r.x,y:r.y,score:candidate.score};
+                }):[],
+                canvases:{original,patch:$('patchCanvas'),histogram:$('histogram')}
+            });
+            downloadBytes(report.bytes,report.fileName);
+            feedback(demo?'Reporte PDF de ejemplo descargado. Las puntuaciones siguen siendo ilustrativas.':'Reporte PDF descargado. No incluye resultados de inferencia.');
+        } catch(error) {
+            console.error(error);
+            feedback('No se pudo generar el reporte PDF. Verifica que la imagen siga disponible e inténtalo de nuevo.',true);
+        } finally {
+            button.disabled=false;button.removeAttribute('aria-busy');labelElement.textContent='Exportar reporte PDF';
+        }
     }
     document.querySelectorAll('[data-view]').forEach(button=>button.addEventListener('click',()=>navigate(button.dataset.view)));
     document.querySelector('.brand').addEventListener('click',event=>{event.preventDefault();navigate('exploracion');});
     $('uploadButton').addEventListener('click',()=>$('imageInput').click());$('imageInput').addEventListener('change',event=>loadFile(event.target.files[0]));
+    $('exportReport').addEventListener('click',exportReport);
     $('resetDemo').addEventListener('click',resetDemo);
     $('previousPatch').addEventListener('click',()=>selectPatch(selected-1));$('nextPatch').addEventListener('click',()=>selectPatch(selected+1));
     $('gridToggle').addEventListener('change',()=> $('patchGrid').classList.toggle('no-grid',!$('gridToggle').checked));

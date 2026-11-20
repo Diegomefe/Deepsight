@@ -4,18 +4,17 @@
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="color-scheme" content="light">
     <title>DeepSight · Exploración de mamografías</title>
     <link rel="stylesheet" href="../static/css/main.css" th:href="@{/css/main.css}">
-    <script defer src="../static/js/main.js" th:src="@{/js/main.js}"></script>
 </head>
 <body>
 <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
     <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
     <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 12h16M12 4v16"/></symbol>
-    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 3v17h17M8 15v-4m5 4V7m5 8V4"/></symbol>
     <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="16" cy="17" r="3"/></symbol>
     <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V3m-5 5 5-5 5 5M4 15v5h16v-5"/></symbol>
     <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H5v18h14V8l-5-5Zm0 0v5h5M8 13h8M8 17h5"/></symbol>
     <symbol id="i-shield" viewBox="0 0 24 24"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z"/><path d="m8 12 3 3 5-6"/></symbol>
     <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m0 0 5-5m-5 5-5-5M4 17v4h16v-4"/></symbol>
 </defs></svg>
 <a class="skip-link" href="#main">Ir al contenido</a>
 <aside class="sidebar">
@@ -23,7 +22,6 @@
     <div class="workspace-label">ESPACIO DE INVESTIGACIÓN</div>
     <nav aria-label="Navegación principal">
         <button class="nav-item active" data-view="exploracion" aria-current="page" title="Exploración"><svg><use href="#i-grid"/></svg>Exploración<span class="nav-dot"></span></button>
-        <button class="nav-item" data-view="evaluacion" title="Evaluación del modelo"><svg><use href="#i-chart"/></svg>Evaluación del modelo</button>
         <button class="nav-item" data-view="configuracion" title="Configuración"><svg><use href="#i-settings"/></svg>Configuración</button>
     </nav>
     <div class="sidebar-session"><span class="eyebrow">SESIÓN ACTUAL</span><div class="session-file"><svg><use href="#i-file"/></svg><span id="sidebarFile">Ejemplo de exploración<small>Imagen sintética</small></span></div><span class="tag">Prototipo interactivo</span></div>
@@ -33,7 +31,7 @@
     <header class="topbar"><div class="breadcrumb">DeepSight <span>/</span> <b id="breadcrumb">Exploración</b></div><span class="research-badge"><svg><use href="#i-shield"/></svg>Uso en investigación</span></header>
     <main id="main">
         <section id="exploracion" class="page-view">
-            <div class="page-heading"><div><p class="eyebrow">DE LA IMAGEN AL DETALLE</p><h1>Exploración de mamografías</h1><p>Carga una imagen, explora sus regiones y observa cada detalle.</p></div><button class="primary" id="uploadButton"><svg><use href="#i-upload"/></svg>Cargar imagen PNG</button><input id="imageInput" type="file" accept="image/png,.png" hidden></div>
+            <div class="page-heading"><div><p class="eyebrow">DE LA IMAGEN AL DETALLE</p><h1>Exploración de mamografías</h1><p>Carga una imagen, explora sus regiones y observa cada detalle.</p></div><div class="heading-actions"><button class="secondary" id="exportReport" type="button"><svg><use href="#i-download"/></svg><span id="exportLabel">Exportar reporte PDF</span></button><button class="primary" id="uploadButton" type="button"><svg><use href="#i-upload"/></svg>Cargar imagen PNG</button></div><input id="imageInput" type="file" accept="image/png,.png" hidden></div>
             <div class="demo-notice"><span class="notice-icon">i</span><p id="demoMessage"><b>Estás explorando un ejemplo.</b> Imagen sintética y resultados ilustrativos; no corresponden a un estudio clínico.</p><button id="resetDemo">Restablecer ejemplo <span aria-hidden="true">↗</span></button></div>
             <div id="feedback" class="feedback" role="status" aria-live="polite" hidden></div>
             <div class="study-strip"><div class="file-icon"><svg><use href="#i-file"/></svg></div><div class="study-name"><strong id="fileName">mamografia_demo.png</strong><span id="fileProperties">1024 × 1536 px · 8 bits · Escala de grises sintética</span></div><div class="study-stat"><small>PATCHES</small><b id="patchCount">96 <span>regiones</span></b></div><div class="study-stat"><small>CANDIDATOS</small><b id="candidateCount">3 <span>ilustrativos</span></b></div><span id="analysisStatus" class="status-pill"><span></span>Ejemplo listo</span></div>
@@ -57,10 +55,27 @@
             </div>
             <section class="candidates-card"><div class="card-heading"><div><h2>Regiones candidatas <span id="candidateBadge" class="count-badge">03</span></h2><p class="subtle" id="candidateDescription">Selección ilustrativa para recorrer el flujo de exploración.</p></div><span class="small-label" id="candidateCaption">PUNTUACIONES DEL EJEMPLO</span></div><div id="candidateList" class="candidate-list"></div><div class="scope-note"><svg><use href="#i-eye"/></svg><span>Los mapas de activación muestran la respuesta del modelo. No confirman la presencia de microcalcificaciones (MCC).</span></div></section>
         </section>
-        <section id="evaluacion" class="page-view" hidden><div class="page-heading"><div><p class="eyebrow">EVIDENCIA DEL MODELO</p><h1>Evaluación del modelo</h1><p>Las métricas de prueba pertenecen a un conjunto de evaluación, no a la imagen abierta.</p></div></div><div class="empty-report"><svg><use href="#i-chart"/></svg><span class="tag">Pendiente de integración</span><h2>Aún no hay un informe de evaluación</h2><p>Al integrar un modelo validado, este espacio mostrará su versión, conjunto de prueba, unidad de evaluación y métricas verificadas.</p></div><div class="metrics-grid"><article><span>LOCALIZACIÓN</span><h3>Sensibilidad</h3><b>—</b><p>Requiere regiones de referencia.</p></article><article><span>LOCALIZACIÓN</span><h3>Falsas propuestas por imagen</h3><b>—</b><p>Requiere un conjunto de prueba.</p></article><article><span>CLASIFICACIÓN POR PATCH</span><h3>F1 / precisión / sensibilidad</h3><b>—</b><p>Se reportan cuando correspondan.</p></article></div><div class="scope-note">Una imagen nueva sin referencia no tiene accuracy, sensibilidad ni F1 propios. Las puntuaciones del ejemplo son únicamente ilustrativas.</div></section>
         <section id="configuracion" class="page-view" hidden><div class="page-heading"><div><p class="eyebrow">ORIGEN Y REPRODUCIBILIDAD</p><h1>Configuración del análisis</h1><p>Parámetros visibles de esta propuesta de interfaz.</p></div></div><div class="config-grid"><article class="config-card"><h2>Registro de la sesión</h2><dl class="region-properties"><div><dt>Modelo CNN</dt><dd>No integrado</dd></div><div><dt>Preprocesamiento</dt><dd>Contraste visual de ejemplo</dd></div><div><dt>Tamaño de patch</dt><dd>128 × 128 px</dd></div><div><dt>Paso / solapamiento</dt><dd>128 px / sin solapamiento</dd></div><div><dt>Coordenadas</dt><dd>Respecto del original</dd></div><div><dt>Selección de candidatos</dt><dd>Fija en el ejemplo sintético</dd></div><div><dt>Lotes de inferencia</dt><dd>Pendiente de integrar</dd></div></dl><p class="subtle">La versión del modelo, transformaciones y configuración de recursos deberán registrarse al integrar el análisis real.</p></article><article class="config-card"><h2>Compatibilidad de esta vista previa</h2><p>PNG de 8 bits, en gris, RGB, paleta o con transparencia. Hasta 4096 px por lado, 8 megapíxeles y 20 MB.</p><p>Los PNG de 1, 2, 4 o 16 bits se rechazan en este prototipo. La vista se decodifica a RGBA de 8 bits; la transparencia se presenta sobre negro y el histograma usa luminancia de 8 bits.</p><div class="scope-note"><svg><use href="#i-shield"/></svg><span>Lectura local en el navegador. El archivo original no se sobrescribe ni se envía a un servidor.</span></div><p class="subtle">Estos límites son una propuesta para el mockup; no constituyen el contrato final del sistema.</p></article></div></section>
         <footer><span>DeepSight <span class="footer-dot">·</span> Exploración visual de mamografías</span><span>UPIIZ · Instituto Politécnico Nacional</span></footer>
     </main>
 </div>
+<div class="loading-screen" id="loadingScreen" role="dialog" aria-modal="true" aria-labelledby="loadingTitle" aria-describedby="loadingMessage" hidden>
+    <div class="loading-panel" tabindex="-1">
+        <div class="loading-brand"><span class="brand-mark"><svg><use href="#i-eye"/></svg></span><span>DeepSight<small>PROCESAMIENTO LOCAL</small></span></div>
+        <div class="loader" aria-hidden="true"></div>
+        <h2 id="loadingTitle">Preparando la imagen</h2>
+        <p class="loading-message" id="loadingMessage" aria-live="polite">Validando el archivo PNG…</p>
+        <div class="loading-progress" role="progressbar" aria-label="Progreso de preparación" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="loadingBar"></span></div>
+        <ol class="loading-steps" aria-hidden="true">
+            <li data-step="validate">Validar archivo</li>
+            <li data-step="decode">Leer imagen</li>
+            <li data-step="grid">Construir malla</li>
+            <li data-step="ready">Preparar vista</li>
+        </ol>
+        <small class="loading-note">El archivo se procesa en este dispositivo y no se envía a un servidor.</small>
+    </div>
+</div>
+<script defer src="../static/js/report.js" th:src="@{/js/report.js}"></script>
+<script defer src="../static/js/main.js" th:src="@{/js/main.js}"></script>
 </body>
 </html>
